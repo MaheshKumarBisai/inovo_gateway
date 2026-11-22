@@ -77,8 +77,18 @@ export async function buildApp(deps: Deps): Promise<FastifyInstance> {
     }
   })
 
-  // Browsers always send Origin on cross-site writes. Refuse any that isn't one of our own front ends.
+  // Security Verifier: validate Host header and origin before processing requests.
   app.addHook('onRequest', async (req) => {
+    // If allowedHosts is configured, ensure the incoming Host matches allowed domains (prevents host header attacks / IP scanners).
+    if (config.allowedHosts.length > 0) {
+      const rawHost = (req.headers['x-forwarded-host'] as string | undefined) || req.headers.host || ''
+      const host = rawHost.split(':')[0]?.trim().toLowerCase()
+      if (!host || !config.allowedHosts.includes(host)) {
+        throw new HttpError(400, 'Invalid host header.', 'invalid_host')
+      }
+    }
+
+    // Browsers always send Origin on cross-site writes. Refuse any that isn't one of our own front ends.
     const origin = req.headers.origin
     if (isUnsafe(req.method) && origin && !config.corsOrigins.includes(origin.replace(/\/$/, ''))) {
       throw new HttpError(403, 'This request came from an origin that isn’t allowed.', 'origin_not_allowed')
@@ -89,6 +99,10 @@ export async function buildApp(deps: Deps): Promise<FastifyInstance> {
     reply.header('x-content-type-options', 'nosniff')
     reply.header('referrer-policy', 'same-origin')
     reply.header('x-frame-options', 'DENY')
+    reply.header('x-permitted-cross-domain-policies', 'none')
+    if (config.cookieSecure || config.env === 'production') {
+      reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains')
+    }
     if (!reply.hasHeader('cache-control') && req.url.startsWith(API_PREFIX)) reply.header('cache-control', 'no-store')
     if (req.url.startsWith('/media/')) {
       reply.header('cross-origin-resource-policy', 'cross-origin') // the app runs on another origin

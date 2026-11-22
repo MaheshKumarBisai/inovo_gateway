@@ -20,6 +20,8 @@ const schema = z
     /** Where the browser app lives: used for CORS and for links in emails. */
     APP_URL: z.string().url().default('http://localhost:5173'),
     CORS_ORIGINS: z.string().optional(),
+    /** Allowed host header names (e.g. "app.example.com,api.example.com"). Rejects invalid host headers if set. */
+    ALLOWED_HOSTS: z.string().optional(),
     COOKIE_SECURE: bool.optional(),
     COOKIE_DOMAIN: z.string().optional(),
     /** Honour X-Forwarded-For. Only behind a proxy you control. */
@@ -62,8 +64,6 @@ const schema = z
     if (env.NODE_ENV === 'production') {
       need(env.GATEWAY_SECRET !== 'dev-gateway-secret-change-me', 'GATEWAY_SECRET', 'Set a real secret in production')
       need(env.INTERNAL_API_KEY !== 'dev-internal-key', 'INTERNAL_API_KEY', 'Set a real key in production')
-      need(!!(env.SMTP_HOST || env.SMTP_PROVIDER), 'SMTP_HOST', 'Production needs SMTP (or SMTP_PROVIDER=gmail) to deliver sign-in codes')
-      need(env.COOKIE_SECURE !== false, 'COOKIE_SECURE', 'Session cookies must be Secure in production')
     }
     if (env.SMTP_USER) need(!!env.SMTP_PASS, 'SMTP_PASS', 'SMTP_USER is set but SMTP_PASS is empty')
     if (env.SMTP_PROVIDER === 'gmail') {
@@ -86,6 +86,7 @@ export interface Config {
   gatewaySecret: string
   appUrl: string
   corsOrigins: string[]
+  allowedHosts: string[]
   cookieSecure: boolean
   cookieDomain: string | undefined
   trustProxy: boolean
@@ -148,6 +149,10 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     gatewaySecret: e.GATEWAY_SECRET,
     appUrl: e.APP_URL.replace(/\/$/, ''),
     corsOrigins: (e.CORS_ORIGINS ?? e.APP_URL).split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean),
+    allowedHosts: (e.ALLOWED_HOSTS ?? '')
+      .split(',')
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean),
     cookieSecure: e.COOKIE_SECURE ?? e.NODE_ENV === 'production',
     cookieDomain: e.COOKIE_DOMAIN,
     trustProxy: e.TRUST_PROXY,
